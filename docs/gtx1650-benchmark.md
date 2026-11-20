@@ -17,15 +17,15 @@ This document is for the **Leonitex** fork of Project ReLink. The goal is better
 1. On the laptop, open **Windows PowerShell** in the repository folder and run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\gtx1650-hardware.ps1 -OutFile .\hardware-report.json`. Inspect the JSON first. It includes CPU, GPU and Windows/driver versions, **not** usernames or device serial numbers. Confirm actual dedicated VRAM separately with Windows Task Manager, Performance, GPU.
 2. Confirm that the game can launch successfully on an up-to-date GTX 1650 driver. Record the Vulkan GPU chosen in the renderer log; don't assume mesh shaders work until verified on this exact driver. Make sure the game chooses the GTX 1650, not the Intel integrated GPU.
 3. Build and launch ReLink using only your own compatible game files. **Never commit or upload game files, keys, dumps, save data, or shader caches to GitHub.**
-4. Warm the shader caches, then use the **same save, location, route, camera path, display refresh rate, and duration** for all runs. Make at least three passes per configuration. Leave frame generation **off** when comparing actual game-rendered FPS and input latency.
+4. Warm the shader caches, then use the **same save, location, route, camera path, display refresh rate, and duration** for all runs. Make at least three passes per configuration. Leave frame generation **off** and choose **Unlocked** FPS when comparing actual game-rendered FPS and input latency. Test the 30-smooth cap separately for playability. If you choose the Minimum preset and then switch frame generation off **in the in-game menu**, it becomes Custom and loses the preset's memory caps; for an apples-to-apples uncapped test, set the preset first, exit the game, and set `frame_generation=0` directly in `relink_options.ini` while it is closed, retaining `quality_preset=1` (verify the key from the saved file).
 5. Record average FPS, 1% low FPS (if measured by a frame-time tool), worst visible stutters, render resolution, upscaler, preset, VRAM in use, and whether any scene geometry is missing or corrupt. Keep screenshots local unless they contain no private or copyrighted material you are not authorized to share.
 
 ### Suggested A/B configurations
 
 | Run | Settings | What it tests |
 | --- | --- | --- |
-| A, upstream control | Latest unmodified upstream version; **Minimum (4GB)** preset; frame generation off; 30 smooth if needed | Existing low-VRAM tuning and stability |
-| B, upstream FSR | Same upstream version; **FSR Quality (67%)** if available; frame generation off; 30 smooth if needed | Whether FSR improves the image/performance trade-off. Note preset may become Custom |
+| A, upstream control | Latest unmodified upstream version; **Minimum (4GB)** preset; frame generation off; unlocked for benchmarking | Existing low-VRAM tuning and stability |
+| B, upstream FSR | Same upstream version; **FSR Quality (67%)** if available; frame generation off; unlocked for benchmarking | Whether FSR improves the image/performance trade-off. Note preset may become Custom |
 | C, fork (future) | Same route, resolution, and frame-generation policy as whichever upstream setting we choose | Whether our code changes actually help |
 
 **Do not hard-code `RX_VK_VRAM_MB` yet.** An artificially low cap can force repeated texture evictions and *worse* stutter or missing scenery. The automatic budget and Minimum preset should be measured first.
