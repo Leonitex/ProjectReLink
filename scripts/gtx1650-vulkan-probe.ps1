@@ -5,13 +5,14 @@
 $ErrorActionPreference = "Stop"
 Write-Output "=== NVIDIA GPU and VRAM (MiB) ==="
 $nv = Get-Command "nvidia-smi.exe" -ErrorAction SilentlyContinue
-if (-not $nv) {
+$nvPath = if ($nv) { $nv.Source } else { $null }
+if (-not $nvPath) {
     $candidate = Join-Path $env:ProgramFiles "NVIDIA Corporation\NVSMI\nvidia-smi.exe"
-    if (Test-Path -LiteralPath $candidate) { $nv = Get-Item -LiteralPath $candidate }
+    if (Test-Path -LiteralPath $candidate) { $nvPath = $candidate }
 }
-if ($nv) {
+if ($nvPath) {
     try {
-        & $nv.Source "--query-gpu=name,driver_version,memory.total,memory.used,memory.free" "--format=csv,noheader,nounits"
+        & $nvPath "--query-gpu=name,driver_version,memory.total,memory.used,memory.free" "--format=csv,noheader,nounits"
     } catch {
         Write-Output "nvidia-smi could not query the driver: $($_.Exception.Message)"
     }
