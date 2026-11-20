@@ -2,6 +2,20 @@
 
 This document is for the **Leonitex** fork of Project ReLink. The goal is better **real rendered frame times** and fewer stutters on a Lenovo L340 Gaming with a GTX 1650 and 16 GB RAM, without sacrificing game correctness or risking saves. **No FPS gain has been demonstrated yet.** The laptop's exact CPU, installed GPU driver, and Vulkan feature support still need measurement.
 
+## Verified laptop hardware (November 20, 2026 UTC)
+
+The local read-only hardware inventory reports **Intel Core i5-9300HF (4 cores / 8 threads, AVX2 supported by Intel's specifications)**, **GeForce GTX 1650**, **15.91 GB RAM**, **Windows 10 Pro build 19045**, and NVIDIA Windows driver **32.0.15.9579 (= 595.79)**. The uploaded report does **not** establish Vulkan mesh-shader feature availability or exact dedicated video memory. These need local driver queries; **do not commit the original hardware-report.json or game logs without reviewing them**.
+
+For a second read-only GPU feature probe:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\gtx1650-vulkan-probe.ps1
+```
+
+This queries NVIDIA memory statistics through `nvidia-smi` if available. It checks Vulkan 1.3 and mesh-shader flags if `vulkaninfo.exe` is installed, otherwise says explicitly that the check was skipped. A listed extension is not the same as proving ReLink successfully uses it; check the ReLink GPU-selection log.
+
+**Driver A/B control:** NVIDIA 621.24 was published November 12, 2026 and supports GTX 1650. Keep a baseline from installed 595.79 before changing drivers; do not confuse driver improvements with fork improvements.
+
 ## What upstream already implements
 
 - Vulkan 1.3 renderer, shader preparation and caching, background shader loading, texture eviction and VRAM/Windows commit budgeting.
