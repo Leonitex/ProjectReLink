@@ -1,10 +1,10 @@
 # GTX 1650 / 4 GB VRAM optimization baseline
 
-This document is for the **Leonitex** fork of Project ReLink. The goal is better **real rendered frame times** and fewer stutters on a Lenovo L340 Gaming with a GTX 1650 and 16 GB RAM, without sacrificing game correctness or risking saves. **No FPS gain has been demonstrated yet.** The laptop's exact CPU, installed GPU driver, and Vulkan feature support still need measurement.
+This document is for the **Leonitex** fork of Project ReLink. The goal is better **real rendered frame times** and fewer stutters on a Lenovo L340 Gaming with a GTX 1650 and 16 GB RAM, without sacrificing game correctness or risking saves. **No FPS gain has been demonstrated yet.** The laptop's exact CPU, driver, and Vulkan mesh-shader support have now been checked locally. Game launch and real performance still need measurement.
 
 ## Verified laptop hardware (November 20, 2026 UTC)
 
-The local read-only hardware inventory reports **Intel Core i5-9300HF (4 cores / 8 threads, AVX2 supported by Intel's specifications)**, **GeForce GTX 1650**, **15.91 GB RAM**, **Windows 10 Pro build 19045**, and NVIDIA Windows driver **32.0.15.9579 (= 595.79)**. The uploaded report does **not** establish Vulkan mesh-shader feature availability or exact dedicated video memory. These need local driver queries; **do not commit the original hardware-report.json or game logs without reviewing them**.
+The local read-only hardware inventory reports **Intel Core i5-9300HF (4 cores / 8 threads, AVX2 supported by Intel's specifications)**, **GeForce GTX 1650**, **15.91 GB RAM**, **Windows 10 Pro build 19045**, and NVIDIA Windows driver **32.0.15.9579 (= 595.79)**. The subsequent local NVIDIA query confirmed **4096 MiB of VRAM** (595.79 driver). `vulkaninfo` completed successfully, reported **Vulkan API 1.4.329**, identified the **GTX 1650**, listed **`VK_EXT_mesh_shader`**, and reported **`meshShader=true`**. The tool warns that extension/feature flags can aggregate multiple GPUs, so the game must still confirm the actual Vulkan device it selects. **Do not commit the original hardware-report.json or game logs without reviewing them**.
 
 For a second read-only GPU feature probe:
 
@@ -12,7 +12,7 @@ For a second read-only GPU feature probe:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\gtx1650-vulkan-probe.ps1
 ```
 
-This queries NVIDIA memory statistics through `nvidia-smi` if available. It checks Vulkan 1.3 and mesh-shader flags if `vulkaninfo.exe` is installed, otherwise says explicitly that the check was skipped. A listed extension is not the same as proving ReLink successfully uses it; check the ReLink GPU-selection log.
+This queries NVIDIA memory statistics through `nvidia-smi` if available and checks reported Vulkan and mesh-shader features if `vulkaninfo.exe` is installed. A missing Epic Online Services `EOSOverlayVkLayer-Win64.json` triggered a Vulkan loader **warning**, but this laptop's probe still succeeded; do not remove registry entries or install drivers solely because of that warning. Successful capability enumeration is not the same as proving ReLink itself initializes or renders correctly; inspect the actual ReLink GPU-selection log.
 
 **Driver A/B control:** NVIDIA 621.24 was published November 12, 2026 and supports GTX 1650. Keep a baseline from installed 595.79 before changing drivers; do not confuse driver improvements with fork improvements.
 
@@ -46,10 +46,12 @@ This queries NVIDIA memory statistics through `nvidia-smi` if available. It chec
 
 ### Vulkan log memory report
 
-When you have a plain-text renderer log from a real gameplay session, run:
+When you have a plain-text renderer log from a real gameplay session, run the analyzer. **The game's log is named `relink_log.txt` in the installed game folder, not `relink.log`**; the previous four runs are rotated to `relink_log.1.txt` through `.4.txt`. These are written when ReLink starts from its launcher without a usable stderr stream (`host/hos_main.c`). The texture subsystem logs a `vk: VRAM:` diagnostic about once every 600 presented frames, so a very short run may have no samples.
+
+Run:
 
 ```powershell
-python .\scripts\low_vram_log_report.py "C:\path\to\relink.log" --csv ".\vram-samples.csv"
+python .\scripts\low_vram_log_report.py "C:\path\to\your-game-folder\relink_log.txt" --csv ".\vram-samples.csv"
 ```
 
 The script reads only `vk: VRAM: ...` memory diagnostic lines and writes a CSV of memory samples if requested. No game data, private paths or graphics assets are included in the CSV. The parser reports usage and memory pressure, **not FPS**. Logs may include machine names, game paths, or error traces; review/sanitize before sharing.
