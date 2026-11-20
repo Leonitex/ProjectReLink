@@ -62,6 +62,22 @@ For local parser tests:
 python -m unittest discover -s tests -p "test_low_vram_log_report.py" -v
 ```
 
+## First gameplay report: bright grass/Link flashes and stuttering
+
+On the first successful ReLink launch (November 20, 2026), the user reported bright flashes affecting grass and Link, blinking grass, frequent stutters, and slightly lagging cutscenes. These are **observations**, not yet diagnosed renderer defects.
+
+**Very close upstream reproduction:** [pixl27/ProjectReLink issue #143](https://github.com/pixl27/ProjectReLink/issues/143) (opened Nov 19, 2026) describes GTX-like NVIDIA laptop hardware (RTX 3050 Ti 4 GB) running v0.7.9.2, with grass and ground textures flashing around Link. The reporter says adding `RX_VK_FAST_SYNC=0` to the installed game's `relink_env.txt` eliminates the flicker, **but raises GPU time/frame**. This workaround is not yet confirmed on the GTX 1650 and may reduce performance.
+
+**Controlled test (do not commit this setting as a renderer default):**
+
+1. Capture a 1–2 minute run with existing settings; keep `relink_log.txt` and record if/when flashing and cutscene stalls happen. The game writes log files in its installed game folder by default.
+2. Fully close the game and place **only** `RX_VK_FAST_SYNC=0` on a new line in `relink_env.txt` beside the installed game executable (keep any existing contents). Start game again and repeat the same route. Verify the log begins with `env: relink_env.txt read: RX_VK_FAST_SYNC=0` (possibly with other settings).
+3. Compare visual flashing **and** perceived FPS/stutter. If the flicker disappears but gameplay is much slower, report both and revert this setting before testing other alternatives. If it persists, this is not the same issue or not the only cause.
+4. Preserve original and new logs separately. Do not confuse first-run shader compilation with steady-state performance; do not compare incompatible render resolutions or generated FPS.
+5. Later, test **30, smooth** cap and **frame generation off** as separate changes. The Minimum (4GB) preset itself enables generated frames; changing a setting *inside the game* can switch the preset to Custom and lose VRAM limits. For valid comparisons verify the resulting `relink_options.ini`.
+
+**Privacy:** `relink_log.txt` may contain local paths or game content details. Review before uploading; never send game dumps, keys, or saves.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
