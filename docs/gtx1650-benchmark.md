@@ -96,6 +96,23 @@ Three **local** logs from official upstream **v0.7.9.2**, collected after first 
 
 **Next controlled runs:** (1) keep all graphics settings unchanged, apply only `RX_VK_FAST_SYNC=0` in `relink_env.txt`, compare flashes, FPS, memory, and logs; (2) after reverting/recording that result, compare the `Minimum (4GB)` preset with generated frames off, checking memory caps remain active. Compare locations and warm caches; do not impose a lower `RX_VK_VRAM_MB` cap without evidence. A 30-FPS cap cannot rescue a scene already running at ~10–20 FPS.
 
+## Fast-sync-off run (uploaded as `relink_log(1).txt`)
+
+This run **does** show `env: relink_env.txt read: RX_VK_FAST_SYNC=0`; the shader/pipeline cache was warm (startup **5.7 seconds**) and the GTX 1650 remained selected. It also shows a **30 FPS smooth cap (HOS_FPS_CAP=30)**, **unlike** the prior `relink_log.txt` baseline, which had no such cap. Therefore these logs are *not* a controlled fast-sync-only A/B test. The user reported some flashing still, but less than before, and explicitly prefers performance to fewer flashes.
+
+| Fast-sync-off observation | Value |
+| --- | --- |
+| Minimum five-second presented-FPS sample | **6.5 FPS** near end |
+| Worst sampled GPU time per frame | **100.0 ms** |
+| Renderer texture residency early (1200 presents) | **131 MB / 123 textures** |
+| Renderer texture residency late (1680 presents) | **3356 MB / 1468 textures** |
+| Renderer per-frame submission (1560-present sample) | **106.93 ms**, including **69.76 ms memory sync** |
+| Late sampled draw count | **1631 per frame** (1560-present interval) |
+
+The first two periodic `vk: VRAM:` reports in this short run were only **1031/3364 MB** and **1159/3364 MB**, during relatively lightweight scenes; **do not misstate these as the peak game VRAM use**. The log does not include a later total-VRAM snapshot. The late **3356 MB** is explicitly **texture memory**, not total GPU VRAM.
+
+Next diagnostic priority: **restore default fast sync** (delete its opt-out line) if the user wants maximal performance; **read/review `relink_options.ini`** to see the actual preset, scaling, framegen and cap; benchmark the same scene with warmed caches and a single fixed set of graphics options (baseline 4GB preset and 30-FPS cap tested separately). The severe slowdown is real even with fast sync off. Measure GPU vs CPU-side memory-sync work before changing mirror/texture reclamation policy. Avoid claiming the 30 FPS cap caused the slowdown (it limits the ceiling, but cannot explain the ~6-10 FPS samples on its own).
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
