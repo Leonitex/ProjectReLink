@@ -78,6 +78,24 @@ On the first successful ReLink launch (November 20, 2026), the user reported bri
 
 **Privacy:** `relink_log.txt` may contain local paths or game content details. Review before uploading; never send game dumps, keys, or saves.
 
+## First three captured runs: quantitative findings
+
+Three **local** logs from official upstream **v0.7.9.2**, collected after first install, were analyzed on November 21, 2026. **Raw game logs are deliberately not committed to this public fork.** Their actual option settings were not captured, so the comparisons are not an A/B benchmark of graphics presets.
+
+| Local run | Evidence | Interpretation |
+| --- | --- | --- |
+| `relink_log.2.txt` | Shader preparation interrupted after about 893 of 38,809 shaders; no gameplay FPS or VRAM samples | Incomplete shader preparation, not useful for performance comparison |
+| `relink_log.1.txt` | Startup shader stage took 1369.1 seconds; 151 shader translation failures recorded; 5-second presented FPS observations eventually reached 19.6; peak sampled VRAM usage 1002 MB | Mostly preparation/light scenes, before heavy gameplay. Translation failures require further investigation if missing graphics recur |
+| `relink_log.txt` | Shader startup took 94.5 seconds; Vulkan selected **GTX 1650** with mesh shaders; AMD FSR 3.1.4 available; fast sync enabled; 5-second presented FPS fell to **9.4–9.7** at the end; highest reported GPU time sample **83.4 ms/frame**; high scene draw counts (up to 2219/frame) | Severe real rendering workload plus probable memory pressure; not just a slow first-time shader startup |
+
+**VRAM observations in `relink_log.txt`:** the highest diagnostic observed **3917 MB GPU memory used vs 3361 MB driver-reported allowed**, **2337 MB of textures vs 1680 MB effective texture budget**; additional high-pressure snapshots include **3601/3361 MB** and **3887/3361 MB**. The budget shrank as the scene grew, and textures were repeatedly retired to release memory. These measurements are evidence of memory pressure, *not* proof that it alone causes every stutter. Driver budget/usage values are dynamic and are not equivalent to an independent hardware VRAM profiler.
+
+**Late-scene GPU samples** were generally ~40–83 ms/frame, corresponding to a GPU throughput limit of roughly 12–25 frames/s at those sampled times. CPU-side memory sync and replay also took significant time in at least one report (~34.75 ms sync / ~57.65 ms submit), so simply reducing render resolution may not eliminate all stalls. Reported private commit reached ~17 GB, with ~3.9 GB Windows commit headroom remaining (distinct from physical resident RAM). Across all sampled present-interval buckets in that run, about 3,989 of 13,053 presented intervals (**30.6%**) exceeded 40 ms. Note that *presented* FPS is not necessarily real game-rendered FPS if frame generation was enabled; the exact settings were not attached.
+
+**Visual glitch:** the log records active fast sync (`vk: fast sync: the exposure meter is met...`), which makes upstream [issue #143](https://github.com/pixl27/ProjectReLink/issues/143) a close match to the reported bright flashing grass/Link. This remains a hypothesis until A/B tested with `RX_VK_FAST_SYNC=0`. There is **no confirmed Vulkan device-loss error** in these logs; the `device lost diagnostics...` startup line only reports supported debugging features.
+
+**Next controlled runs:** (1) keep all graphics settings unchanged, apply only `RX_VK_FAST_SYNC=0` in `relink_env.txt`, compare flashes, FPS, memory, and logs; (2) after reverting/recording that result, compare the `Minimum (4GB)` preset with generated frames off, checking memory caps remain active. Compare locations and warm caches; do not impose a lower `RX_VK_VRAM_MB` cap without evidence. A 30-FPS cap cannot rescue a scene already running at ~10–20 FPS.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
