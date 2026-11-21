@@ -27,6 +27,14 @@ class ReLinkPerformanceReportTest(unittest.TestCase):
         self.assertEqual(report["fast_sync"], "off")
         self.assertEqual(report["fps_cap"], "30")
 
+    def test_mirror_scan_telemetry(self):
+        sample = "vk: mirror scan (1024 syncs, RX_VK_SYNC_EDGE_SKIP=1): 41000 inspected, 300000 clean skipped, 9.25 ms CPU scan"
+        report = summarize(measures([sample]))
+        self.assertEqual(report["edge_skip"], "on")
+        self.assertEqual(report["scan_ms_median"], 9.25)
+        self.assertEqual(report["scan_inspected_max"], 41000)
+        self.assertEqual(report["scan_skipped_max"], 300000)
+
     def test_no_samples(self):
         report = summarize(measures(["unrelated entry"]))
         self.assertEqual(report["fps_count"], 0)
