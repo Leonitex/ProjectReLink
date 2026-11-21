@@ -198,6 +198,31 @@ The medians are **not** per-frame synchronization of the same camera view; scene
 
 This result shifts our source priority to **view-dependent high draw counts + costly memory sync** (rather than parked texture RAM size alone), while retaining the VRAM pressure safeguards. Work toward cutting redundant per-draw operations, avoiding GPU/CPU synchronization, render-target reuse, and accurate matched-scene benchmarking; don't claim code-speedup until custom DLL is built and tested.
 
+## Handheld FSR Quality + corrected 4GB caps (`relink_log(7).txt`, 2026-11-21)
+
+The user ran the same type of wall/tree/open-scene route. The official v0.7.9.2 log confirms **handheld 1536x864 game output**, **FSR Quality at 1024x576 3D internal resolution** (`vk: AMD FSR draws OoT's upscale`), **30 FPS smooth cap**, **frame generation off**, and `RX_VK_FAST_SYNC=0`. `quality_preset=1` remained in use: initial dynamic texture budget was 2200 MB, and logged buffer mirror residency was **256 MB**. Startup shaders took **3.0 seconds** (warm cache).
+
+| Metric | Corrected capped Docked (`relink_log(6).txt`) | Capped Handheld (`relink_log(7).txt`) |
+| --- | ---: | ---: |
+| Median 5-second presented-FPS after 1200 presents | 11.1 (22 samples) | **13.4 (26 samples)** |
+| Last five-second FPS sample | 10.2 | **11.5** |
+| Peak sampled Vulkan GPU time/frame | 104.3 ms | **82.7 ms** |
+| Peak sampled CPU memory-sync time/frame | 70.7 ms | **56.34 ms** |
+| Peak reported GPU-memory use | 4269 MB | **4027 MB** |
+| Driver memory allowance (high pressure snapshots) | ~3284 MB | ~3279 MB |
+| Highest demanding-scene sampled draw count | 3005/frame | 2810/frame |
+| Example >2600-draw sample | 3005 draws, 8.5 FPS, 104.3 ms GPU, 70.7 ms sync | 2810 draws, 12.0 FPS, 73.7 ms GPU, 47.56 ms sync |
+
+Additional draw-count-binned evidence (not exact matched frames; bins are coarse and short, so do not claim an exact benchmark speedup):
+- 1000–1799 draws/frame after 1200 presents: Docked 11.4 FPS, 72.7 ms GPU, 49.1 ms memory sync (3 samples); Handheld **13.1 FPS, 66.7 ms GPU, 44.9 ms sync** (5 samples).
+- 1800–2599 draws/frame: Docked 10.4 FPS, 84.0 ms GPU, 60.4 ms sync (3); Handheld **12.1 FPS, 73.5 ms GPU, 49.0 ms sync** (3).
+
+**Caveat:** FPS samples include different camera positions / scene loading; no frame-level user camera markers exist and run lengths differ (2649 vs 3095 presents). Roughly **21% higher median sample FPS** is a promising association with Handheld, **not** a controlled hardware performance claim. 30 FPS remains unattainable in heavy outdoor views.
+
+**Remaining constraint:** the Handheld run's VRAM reports were **4027/3279**, **3687/3279**, **4006/3279**, and **3961/3284 MB**, with **texture-cache snapshots ~2.2–2.8 GB above ~1.65–1.78 GB effective budget**. ReLink logged images allocated in **system memory because VRAM was full**. Image recycling reports repeatedly contained **zero spare images**, so branch-only `RX_VK_SPARE_SOFT_PCT` is unlikely to help these scenes. CPU-side synchronization peaked **56.34 ms per frame** and was often 20–55 ms; this still scales with draws.
+
+**Next recommendation:** retain Handheld+FSR Quality+corrected 4GB cap as the best observed **performance-first configuration**, subject to the user's judgement of picture clarity / actual smoothness. Do not pile on `RX_VK_WB_LAZY`, additional RAM parking, or tighter memory caps without A/B evidence. Start profiling/debugging the fork's **per-draw Vulkan replay, buffer-mirror dirty-page sync/writeback, renderer resource allocation, and render-target reuse**. Build an experimental DLL and A/B with the *same* scene; the current logs are **from the official binary only**. One optional single-variable graphics experiment is Handheld+FSR Performance (50%); diminishing returns expected if CPU memory sync is dominant.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
