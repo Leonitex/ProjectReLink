@@ -176,6 +176,28 @@ Max reported VRAM use **4385/3283 MB**, at a different periodic sample. Other VR
 
 This confirms **view-dependent draw count, GPU work, and CPU-side memory synchronization** are major bottlenecks. Without frame-level camera markers the wall/field mapping is a plausible interpretation, not an exact trace correlation. Like-for-like FSR-only `relink_log(2).txt` was a different route, so apparent aggregate FPS changes do not establish a VRAM-cap benefit. **The next controlled test must use the corrected `quality_preset=1` key**, or if that worsens performance, revert and test `handheld_profile=1` separately. Avoid experimenting with 2–4 GB additional RAM parking given process commitment.
 
+## Corrected 4GB memory cap: repeated wall/open view (user `relink_log(6).txt`)
+
+The test finally used the **correct** `quality_preset=1` key, while preserving **AMD FSR Quality** (`dlss=3`, `resolution=3` = 1366x768 -> 2048x1152), **30 FPS smooth** (`frame_rate=2`), **zero generated frames**, docked profile and `RX_VK_FAST_SYNC=0`. The installed binary remains **official v0.7.9.2**: these measurements **do not test the renderer changes in our branch**. Preset activation was confirmed by the diagnostic **2200 MB texture-budget starting value** and **256 MB GPU mirror limit**.
+
+| Diagnostic | Uncapped wall/open test `relink_log(3).txt` | Corrected-cap test `relink_log(6).txt` |
+| --- | ---: | ---: |
+| Median 5s presented-FPS (samples with >=1200 presents) | 10.05 | 11.10 |
+| Last 5s presented-FPS sample | 9.4 | 10.2 |
+| Peak sampled total GPU memory used | 4385 MB / 3283 MB allowed | 4269 MB / 3284 MB allowed |
+| Peak sampled GPU time / frame | 122.2 ms | 104.3 ms |
+| Peak sampled CPU-side memory sync | 88.97 ms | 70.68 ms |
+| Max GPU buffer mirror residency | 480 MB | **256 MB** |
+| Most demanding sampled draw count | 2502/frame | **3005/frame** |
+| Active texture snapshot at highest VRAM use | 2869 MB (budget 1458 MB) | **3069 MB (budget 1797 MB)** |
+| Warm-cache startup | 5.5 s | 5.2 s |
+
+The medians are **not** per-frame synchronization of the same camera view; scenes and load timing vary, and the corrected run had 2649 presents rather than 2256. The cap yields some promising lower peak use and lower sampled GPU/CPU cost, but **is not a validated reproducible FPS improvement**. **Both exceed driver VRAM allowance badly**, and open terrain still commonly runs around 7–12 FPS. In the cap run, a 3005-draw sample consumed **104.3 ms GPU / 111.94 ms CPU replay / 70.68 ms memory sync**. Even the limit cannot evict active textures without causing thrash and blank patches; shadows, framebuffers and render targets count outside the texture budget. There were further `VRAM full:` fallback allocations in system memory.
+
+**Do not further reduce texture or mirror caps blindly.** Aged spare-image reclaim has low impact when there are zero spares. Next **single-variable** diagnostic: copy the corrected INI, change **only** `handheld_profile=0` to `handheld_profile=1`. ReLink's v0.7.9.2 source says Handheld uses a 1536x864 game output, reducing FSR Quality's render size approximately to 1024x576; this may reduce render-target pixel cost but not per-draw CPU work. Keep the 4GB cap, FSR, frame cap, framegen and fast-sync unchanged. The user-facing file is `relink_options_gtx1650_4gb_handheld_test.ini`. Compare the same wall/tree/open route, give a qualitative smoothness judgement, preserve both logs; revert if visibility or FPS worsens.
+
+This result shifts our source priority to **view-dependent high draw counts + costly memory sync** (rather than parked texture RAM size alone), while retaining the VRAM pressure safeguards. Work toward cutting redundant per-draw operations, avoiding GPU/CPU synchronization, render-target reuse, and accurate matched-scene benchmarking; don't claim code-speedup until custom DLL is built and tested.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
