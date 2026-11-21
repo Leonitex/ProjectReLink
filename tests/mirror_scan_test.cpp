@@ -1,6 +1,8 @@
 #include "../gpu/vk/mirror_scan.h"
 #include <cassert>
 #include <cstdint>
+#include <vector>
+#include <algorithm>
 
 int main() {
     using mkwvk::mirror_scan::after_clean_region;
@@ -39,5 +41,42 @@ int main() {
     }
     assert(dirty_original == dirty_new);
     assert(checks_new < checks_original);
+
+    // Randomized semantic regression: 10,000 pool offsets, lengths and
+    // page-generation patterns. Dirty pages must match the old algorithm.
+    std::uint32_t seed = 0xC0FFEEu;
+    auto rand32 = [&]() { seed = seed * 1664525u + 1013904223u; return seed; };
+    constexpr std::uint64_t total_pages = 4096, region_pages = 512;
+    for (int trial = 0; trial < 10000; ++trial) {
+        const auto first = rand32() % total_pages;
+        const auto length = 1 + rand32() % (total_pages - first);
+        const auto last = first + length;
+        const std::uint32_t synced = 10;
+        std::vector<std::uint32_t> page_gen(total_pages, 1), region_gen(total_pages / region_pages, 1);
+        for (int n = 0; n < 100; ++n) {
+            const auto pg = rand32() % total_pages;
+            const auto gen = rand32() % 20;
+            page_gen[pg] = gen;
+            region_gen[pg / region_pages] = std::max(region_gen[pg / region_pages], gen);
+        }
+        std::vector<std::uint64_t> dirty_original, dirty_optimized;
+        for (auto pg = first; pg < last;) {
+            if (pg % region_pages == 0 && region_gen[pg / region_pages] <= synced) {
+                pg += region_pages;
+                continue;
+            }
+            if (page_gen[pg] > synced) dirty_original.push_back(pg);
+            ++pg;
+        }
+        for (auto pg = first; pg < last;) {
+            if (region_gen[pg / region_pages] <= synced) {
+                pg = after_clean_region(pg, last, region_pages);
+                continue;
+            }
+            if (page_gen[pg] > synced) dirty_optimized.push_back(pg);
+            ++pg;
+        }
+        assert(dirty_original == dirty_optimized);
+    }
     return 0;
 }
