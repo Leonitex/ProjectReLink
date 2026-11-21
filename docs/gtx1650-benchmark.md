@@ -223,6 +223,27 @@ Additional draw-count-binned evidence (not exact matched frames; bins are coarse
 
 **Next recommendation:** retain Handheld+FSR Quality+corrected 4GB cap as the best observed **performance-first configuration**, subject to the user's judgement of picture clarity / actual smoothness. Do not pile on `RX_VK_WB_LAZY`, additional RAM parking, or tighter memory caps without A/B evidence. Start profiling/debugging the fork's **per-draw Vulkan replay, buffer-mirror dirty-page sync/writeback, renderer resource allocation, and render-target reuse**. Build an experimental DLL and A/B with the *same* scene; the current logs are **from the official binary only**. One optional single-variable graphics experiment is Handheld+FSR Performance (50%); diminishing returns expected if CPU memory sync is dominant.
 
+## Renderer milestone 1: mirror-sync clean-region scan (experimental)
+
+**Source code is now committed on this branch**, alongside the earlier spare-image reclamation experiment. The new change is in `gpu/vk/vk_memory.cpp`, supported by pure helper `gpu/vk/mirror_scan.h` and `tests/mirror_scan_test.cpp`.
+
+The expensive **CPU-side `memory sync` timer** can include many operations; we are *not* claiming that whole time is spent in mirror page scanning. But in the Handheld log's outdoor views, GPU buffer mirrors performed **up to 593.8 copies per frame**, so mirror sync is a high-value path to measure. In the old implementation, `mirror_sync` skipped a clean 2 MiB region only when the current page was **exactly at that region boundary**. When a GPU buffer pool started partway through a clean 2 MiB region, it still visited up to 511 unnecessary pages before reaching the next aligned boundary. The optional shortcut uses the same region's write-generation validity check, but advances to the **next region boundary or pool end**, preserving every potentially dirty page and all existing capture/write-back logic.
+
+**Experiment flags (in `relink_env.txt` of a game built from this branch; ignored by unmodified v0.7.9.2):**
+
+```ini
+RX_VK_SYNC_SCAN_PROFILE=1
+RX_VK_SYNC_EDGE_SKIP=1
+```
+
+- `RX_VK_SYNC_EDGE_SKIP` is **off by default**. Use `0` in a control run and `1` in an experiment.
+- `RX_VK_SYNC_SCAN_PROFILE=1` emits one `vk: mirror scan ...` line **per 1024 mirror-sync calls**: how many pages required detailed inspection, how many clean pages were skipped, and the CPU time consumed by those scans. Off by default to avoid measurement overhead during normal play.
+- Leave `RX_VK_SPARE_SOFT_PCT` **unset** while evaluating this improvement, because the previous scenes had almost no spare GPU images and we want an isolated comparison.
+- Keep all other game settings identical (corrected 4 GB memory limits, Handheld, FSR Quality, no frame generation, 30 FPS cap, fast sync disabled); repeat the same wall/tree/open-view route for both flags. Save the logs *before* each new launch replaces them. Do not infer an improvement from shader startup or warm-cache fluctuations.
+- The log's **`memory sync`** category includes other operations; an improvement in scan time may be too small to affect FPS. Draw count, total GPU time, and driver VRAM residency must be evaluated separately.
+
+**Validation:** the helper has passed the C++17 GCC and Clang standalone builds/tests locally, including **10,000 deterministic randomized pool-offset/dirty-page generation cases** and boundary assertions. This is **not** a Windows DLL build, Vulkan integration test, game compatibility test, or measured FPS improvement. The runtime toggle preserves the original page-scanning path while we investigate correctness. No game files, proprietary assets or raw player logs were committed.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
