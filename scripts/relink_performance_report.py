@@ -8,12 +8,12 @@ import re
 import statistics
 from pathlib import Path
 
-NUM = r"([0-9]+(?:\\.[0-9]+)?)"
-FPS = re.compile(r"vi: \\d+ frames presented \\(" + NUM + r" fps over the last " + NUM + r" s")
+NUM = r"([0-9]+(?:\.[0-9]+)?)"
+FPS = re.compile(r"vi: \d+ frames presented \(" + NUM + r" fps over the last " + NUM + r" s")
 GPU = re.compile(r"vk: GPU time " + NUM + r" ms a frame")
-REPLAY = re.compile(r"vk: a frame's replay time \\(ms\\): submit " + NUM + r".*?memory sync " + NUM)
-VRAM = re.compile(r"vk: VRAM: (\\d+) MB used of (\\d+) MB allowed \\(\\d+ MB of it free in the blocks\\); textures (\\d+) MB \\(budget (\\d+) MB\\)")
-TEX = re.compile(r"vk: \\d+ presents, " + NUM + r" fps; a frame:.*?\\b(\\d+) textures \\((\\d+) MB\\)")
+REPLAY = re.compile(r"vk: a frame's replay time \(ms\): submit " + NUM + r".*?memory sync " + NUM)
+VRAM = re.compile(r"vk: VRAM: (\d+) MB used of (\d+) MB allowed \(\d+ MB of it free in the blocks\); textures (\d+) MB \(budget (\d+) MB\)")
+TEX = re.compile(r"vk: \d+ presents, " + NUM + r" fps; a frame:.*?\b(\d+) textures \((\d+) MB\)")
 
 
 def measures(lines):
@@ -66,13 +66,13 @@ def main(argv=None):
                 result = summarize(measures(f))
         except OSError as exc:
             p.error(f"cannot read {path.name}: {exc}")
-        print(f"\\n{path.name}: fast sync {result['fast_sync']}; cap {result['fps_cap']}")
+        print(f"\n{path.name}: fast sync {result['fast_sync']}; cap {result['fps_cap']}")
         for k in ("fps", "gpu_ms", "submit_ms", "sync_ms", "vram_used", "live_texture_mb"):
             n = result[k + "_count"]
             if n:
                 print(f"  {k}: {n} samples; min {result[k + '_min']}, median {result[k + '_median']}, max {result[k + '_max']}")
         print(f"  VRAM samples over allowance: {result['vram_over_allowance']}; GPU-to-RAM park events: {result['ram_parked_events']}")
-    print("\\nCompare matched scenes with the same settings. Presented FPS can include generated frames.")
+    print("\nCompare matched scenes with the same settings. Presented FPS can include generated frames.")
     return 0
 
 
