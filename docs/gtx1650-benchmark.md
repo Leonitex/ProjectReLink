@@ -137,6 +137,22 @@ python .\scripts\relink_performance_report.py "C:\Users\Scott\Games\ReLink\relin
 
 The script reads logs only, does not expose paths from their contents, and does **not** equate generated/presented FPS with real rendered FPS. Python parser tests are in `tests/test_relink_performance_report.py`; isolated C++ policy tests in `tests/spare_pressure_test.cpp`.
 
+## User's actual graphics options (uploaded 2026-11-21)
+
+The supplied `relink_options.ini` contains only 13 settings, **no explicit quality-preset/memory-cap keys**. ReLink's defaults apply for absent keys. Verified against `launcher/Settings.cs`, `launcher/Home.cs`, `gpu/vk/upscaler_rows.h`:
+
+- `resolution=1`: Native / **100% 3D render resolution** (costly on the GTX 1650). ReLink's logs indicate game output 2048x1152, desktop swapchain 1920x1080.
+- `dlss=0`: the game's own upscaler, *not* AMD FSR; `dlss=3` selects AMD FSR.
+- `frame_rate=2`: **30 FPS smooth cap**; do not infer this causes the observed 6-10 FPS (cannot sustain the cap in heavy scenes).
+- `frame_generation=0`, `frame_pacing=0`, `v-sync=0`: all disabled.
+- `handheld_profile=0`: docked. Enabling it later is a separate performance experiment.
+- `upscaling=0`: **window scaling filter** (simple), *not* the AMD FSR selector.
+- `sharpness=0`: no extra sharpening.
+
+**First controlled settings test on official v0.7.9.2:** change exactly `resolution=1 → resolution=3` (**67%, FSR Quality**) and `dlss=0 → dlss=3` (AMD FSR), keeping the user's preference `RX_VK_FAST_SYNC=0`, existing 30 FPS cap, and all other values unchanged. The linked local test ini is delivered to the user separately, not checked into GitHub, to avoid overwriting user preferences. The estimated rendered 3D pixel area is ~45% of native; **this is not a measured FPS increase**, because GPU upscaler overhead, VRAM, CPU-side replay and memory sync still matter. If not enough, next test is `resolution=4` (50% FSR Performance), or `handheld_profile=1`, **one change at a time**. ReLink's own menu suggests optional `sharpness=80` with FSR; leave sharpness at 0 for the first controlled test.
+
+Keep a backup and compare the *same* heavy scene with a warmed cache. The official `relink_options.ini` does not specify a 4GB preset; the in-game Quality preset changes memory caps, render resolution, framegen and profile together and would confound this first A/B experiment. Do not combine it with this test. Raw logs and local file paths should not be committed.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
