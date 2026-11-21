@@ -31,6 +31,7 @@
 #include "import_hold.h"
 #include "mirror_inherit.h"
 #include "mirror_trim.h"
+#include "mirror_scan.h"
 #ifdef __linux__
 #include <cerrno>
 #include <dlfcn.h>
@@ -3370,16 +3371,29 @@ void mirror_sync(Pool& p) {
     p.synced_epoch = mirror_epoch;
     p.sync_seg = texture_segment();
     mirror_synced.push_back(&p);
+    // Opt-in safe scan shortcut for clean partial 2 MiB regions. The
+    // unmodified code only skipped clean regions at their first page.
+    static const bool edge_skip = getenv("RX_VK_SYNC_EDGE_SKIP") && atoi(getenv("RX_VK_SYNC_EDGE_SKIP")) != 0;
+    static const bool scan_profile = getenv("RX_VK_SYNC_SCAN_PROFILE") && atoi(getenv("RX_VK_SYNC_SCAN_PROFILE")) != 0;
+    const auto scan_t0 = scan_profile ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    uint64_t scanned_pages = 0, skipped_pages = 0;
     std::vector<VkBufferCopy> runs;   // (from guest memory)
     std::map<VkBuffer, std::vector<VkBufferCopy>> cap_runs;   // (from the captures' copies)
     uint64_t run_lo = 0, run_hi = 0;
     static thread_local std::vector<uint64_t> lazy_pages;   // (RX_VK_WB_LAZY: pages put off that the CPU wrote, as pool offsets)
     lazy_pages.clear();
-    for (uint64_t page = p.lo >> kPageShift; page < (p.hi + 4095) >> kPageShift;) {
-        if (page % kRegionPages == 0 && region_gen[page / kRegionPages] <= p.synced_gen) {
-            page += kRegionPages;   // (a clean 2 MB region)
+    const uint64_t end_page = (p.hi + 4095) >> kPageShift;
+    for (uint64_t page = p.lo >> kPageShift; page < end_page;) {
+        if (region_gen[page / kRegionPages] <= p.synced_gen &&
+            (edge_skip || page % kRegionPages == 0)) {
+            const uint64_t next = edge_skip
+                ? mirror_scan::after_clean_region(page, end_page, kRegionPages)
+                : page + kRegionPages;
+            if (scan_profile) skipped_pages += next - page;
+            page = next;
             continue;
         }
+        if (scan_profile) ++scanned_pages;
         const uint32_t pg = page_gen(page);
         const bool dirty = pg > p.synced_gen;
         if (dirty && gpu_page(page)) {   // (diagnostic: see memory_stamp_gpu)
@@ -3464,6 +3478,20 @@ void mirror_sync(Pool& p) {
         page++;
     }
     if (run_hi) runs.push_back({run_lo, run_lo, run_hi - run_lo});
+    if (scan_profile) {
+        static std::atomic<uint64_t> calls{0}, checked{0}, skipped{0}, nanos{0};
+        checked.fetch_add(scanned_pages, std::memory_order_relaxed);
+        skipped.fetch_add(skipped_pages, std::memory_order_relaxed);
+        nanos.fetch_add((uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - scan_t0).count(), std::memory_order_relaxed);
+        if ((calls.fetch_add(1, std::memory_order_relaxed) + 1) % 1024 == 0) {
+            logf("vk: mirror scan (1024 syncs, RX_VK_SYNC_EDGE_SKIP=%d): %llu inspected, %llu clean skipped, %.2f ms CPU scan",
+                 edge_skip ? 1 : 0,
+                 (unsigned long long)checked.exchange(0, std::memory_order_relaxed),
+                 (unsigned long long)skipped.exchange(0, std::memory_order_relaxed),
+                 nanos.exchange(0, std::memory_order_relaxed) / 1e6);
+        }
+    }
     if (!lazy_pages.empty()) wb_sync_flush(p, lazy_pages);   // (ahead of the copies below)
     for (const auto& [buf, rs] : cap_runs) {
         GprofSpan gp(upload_command_buffer(), "msync copies (CPU pages from a capture -> mirror)");
