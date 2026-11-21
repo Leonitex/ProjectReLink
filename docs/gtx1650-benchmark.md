@@ -113,6 +113,30 @@ The first two periodic `vk: VRAM:` reports in this short run were only **1031/33
 
 Next diagnostic priority: **restore default fast sync** (delete its opt-out line) if the user wants maximal performance; **read/review `relink_options.ini`** to see the actual preset, scaling, framegen and cap; benchmark the same scene with warmed caches and a single fixed set of graphics options (baseline 4GB preset and 30-FPS cap tested separately). The severe slowdown is real even with fast sync off. Measure GPU vs CPU-side memory-sync work before changing mirror/texture reclamation policy. Avoid claiming the 30 FPS cap caused the slowdown (it limits the ceiling, but cannot explain the ~6-10 FPS samples on its own).
 
+## RAM texture offload and first opt-in renderer experiment
+
+**Already upstream:** `gpu/vk/vk_texture.cpp` parks *some GPU-rendered textures* in **system memory** before evicting their Vulkan image (`park_texture` and `park_restore`). With 16 GB of host RAM the default `RX_VK_PARK_MB` cap is **1024 MiB** (min of 1024 MiB and RAM / 16); it declines to park when Windows commit is short. Textures whose original compressed bytes are still present in guest memory can be reconstructed instead of kept as duplicate full-resolution GPU images. ReLink also imports and mirrors guest buffer memory separately. It is **incorrect** to claim every active GPU texture can be moved to system RAM without a frame-time penalty. GPU readback / reupload / page faults can introduce more stalls, and the GTX 1650's PCIe 3.0 link has much lower bandwidth than local GDDR5.
+
+**Why not force extra RAM parking now:** the user has 16 GB physical RAM, while a prior run logged 17 GB process private commit and limited system commit headroom. Raising the parking cap to 2–4 GB could increase Windows pagefile pressure and worsen stutters. Keep the default parking cap until benchmark data shows otherwise. Also do **not** lower `RX_VK_VRAM_MB` blindly, as repeatedly reloading hot textures reduces performance.
+
+**First experimental source improvement, branch-only:** `gpu/vk/spare_pressure.h` and `gpu/vk/vk_texture.cpp` now implement an **opt-in early release of unused Vulkan *spare images***. It is not a new RAM texture cache. Setting `RX_VK_SPARE_SOFT_PCT=85` on a build compiled from this branch will, once Vulkan reports >=85% of the driver's memory allowance in use, release eligible unused spare images that have been idle for >=60 presents. Images still being used, and newly retired images likely to be reused, are not selected by this extra policy. Existing retirement safety and destruction caps remain. The option is **off by default**; on an unmodified upstream binary the setting has no effect. Reclaiming old spares may lower VRAM pressure, *or* cause extra allocations and lower performance; run a controlled A/B comparison before retaining it. A standalone C++ helper test passes with g++ C++17; **a complete Windows build and gameplay test remain unverified**.
+
+For a compiled fork, preserve whichever fast-sync setting you want to test and compare otherwise identical runs with no `RX_VK_SPARE_SOFT_PCT` and with:
+
+```ini
+RX_VK_SPARE_SOFT_PCT=85
+```
+
+Log markers to compare include `experimental spare reclaim`, `vk: images:`, `vk: VRAM:`, GPU time, CPU replay time (`memory sync`), and 5-second presented FPS. The choice to leave `RX_VK_FAST_SYNC=0` enabled is the user's current preference; do not silently remove it while running tests. The A/B routes must match, and the current run's **30-FPS cap** needs to be held constant or separately tested.
+
+A new stdlib-only CLI `scripts/relink_performance_report.py` compares renderer-reported performance indicators:
+
+```powershell
+python .\scripts\relink_performance_report.py "C:\Users\Scott\Games\ReLink\relink_log.txt" "C:\Users\Scott\Games\ReLink\relink_log.1.txt"
+```
+
+The script reads logs only, does not expose paths from their contents, and does **not** equate generated/presented FPS with real rendered FPS. Python parser tests are in `tests/test_relink_performance_report.py`; isolated C++ policy tests in `tests/spare_pressure_test.cpp`.
+
 ## Change acceptance criteria
 
 A renderer optimization is acceptable only when it **preserves visual correctness**, gives equal or lower memory pressure/stutter across repeated tests, and does not materially worsen CPU/RAM usage, startup, or driver compatibility. Use the upstream control on the **same machine**. Revert changes that only increase a headline FPS number by increasing input lag, hiding geometry, or repeatedly evicting active textures.
