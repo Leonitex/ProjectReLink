@@ -42,3 +42,7 @@ ngx-sdk/
 launcher/bin/
 launcher/obj/
 launcher/setup/*.o
+
+# ---- local hardware diagnostics / benchmark exports (review before sharing) ----
+/hardware-report.json
+/vram-samples.csv
