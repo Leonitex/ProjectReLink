@@ -14,11 +14,12 @@ GPU = re.compile(r"vk: GPU time " + NUM + r" ms a frame")
 REPLAY = re.compile(r"vk: a frame's replay time \(ms\): submit " + NUM + r".*?memory sync " + NUM)
 VRAM = re.compile(r"vk: VRAM: (\d+) MB used of (\d+) MB allowed \(\d+ MB of it free in the blocks\); textures (\d+) MB \(budget (\d+) MB\)")
 TEX = re.compile(r"vk: \d+ presents, " + NUM + r" fps; a frame:.*?\b(\d+) textures \((\d+) MB\)")
+SCAN = re.compile(r"vk: mirror scan \(1024 syncs, RX_VK_SYNC_EDGE_SKIP=([01])\): (\d+) inspected, (\d+) clean skipped, " + NUM + r" ms CPU scan")
 
 
 def measures(lines):
-    out = {k: [] for k in ("fps", "gpu_ms", "submit_ms", "sync_ms", "vram_used", "vram_allowed", "textures", "texture_budget", "live_texture_mb")}
-    out.update(fast_sync="unknown", fps_cap="unknown", ram_parked_events=0)
+    out = {k: [] for k in ("fps", "gpu_ms", "submit_ms", "sync_ms", "vram_used", "vram_allowed", "textures", "texture_budget", "live_texture_mb", "scan_inspected", "scan_skipped", "scan_ms")}
+    out.update(fast_sync="unknown", fps_cap="unknown", ram_parked_events=0, edge_skip="unknown")
     for line in lines:
         if "env: relink_env.txt read:" in line and "RX_VK_FAST_SYNC=0" in line:
             out["fast_sync"] = "off"
@@ -40,11 +41,16 @@ def measures(lines):
                 out[key].append(int(val))
         if m := TEX.search(line):
             out["live_texture_mb"].append(int(m[3]))
+        if m := SCAN.search(line):
+            out["edge_skip"] = "on" if m[1] == "1" else "off"
+            out["scan_inspected"].append(int(m[2]))
+            out["scan_skipped"].append(int(m[3]))
+            out["scan_ms"].append(float(m[4]))
     return out
 
 
 def summarize(data):
-    summary = {k: data[k] for k in ("fast_sync", "fps_cap", "ram_parked_events")}
+    summary = {k: data[k] for k in ("fast_sync", "fps_cap", "ram_parked_events", "edge_skip")}
     for k, v in data.items():
         if isinstance(v, list):
             summary[k + "_count"] = len(v)
@@ -71,6 +77,11 @@ def main(argv=None):
             n = result[k + "_count"]
             if n:
                 print(f"  {k}: {n} samples; min {result[k + '_min']}, median {result[k + '_median']}, max {result[k + '_max']}")
+        if result["scan_ms_count"]:
+            n = result["scan_ms_count"]
+            print(f"  mirror scan (1024 syncs per sample; edge skip {result['edge_skip']}): {n} samples; "
+                  f"median {result['scan_ms_median']} ms CPU, "
+                  f"pages inspected {result['scan_inspected_median']}, skipped {result['scan_skipped_median']}")
         print(f"  VRAM samples over allowance: {result['vram_over_allowance']}; GPU-to-RAM park events: {result['ram_parked_events']}")
     print("\nCompare matched scenes with the same settings. Presented FPS can include generated frames.")
     return 0
