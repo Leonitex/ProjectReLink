@@ -62,6 +62,7 @@
 #include "prompt_tex.h"
 #include "ocarina_tex.h"
 #include "target_overlap.h"
+#include "spare_pressure.h"
 #include "host_shaders/block_linear_unswizzle_2d_comp_spv.h"
 #include "vk_work.h"   // (after the others: counts the commands that do GPU work, for full_barrier)
 
@@ -4668,6 +4669,15 @@ void texture_frame(uint64_t completed) {
     // 8077 MB of 7238 allowed, the driver paged it out and frames took 64 ms for 6 s, which freed even fewer a second.
     // RX_VK_TIGHT_FREE=0: the cap always, as before
     static const bool tight_free = !getenv("RX_VK_TIGHT_FREE") || atoi(getenv("RX_VK_TIGHT_FREE")) != 0;
+    // (GTX 1650 experiment, opt-in) On constrained VRAM, idle spare images may occupy memory needed
+    // for new textures. Release only spares older than 60 presents once RX_VK_SPARE_SOFT_PCT of
+    // the driver's allowance is used. Leave the newest spares for immediate image reuse.
+    // 0 (default): original behavior. Try 85 after measuring a baseline; compare allocation churn.
+    static const int spare_soft_pct = [] {
+        const int pct = getenv("RX_VK_SPARE_SOFT_PCT") ? std::clamp(atoi(getenv("RX_VK_SPARE_SOFT_PCT")), 0, 99) : 0;
+        if (pct) logf("vk: experimental spare reclaim: idle >=60 presents above %d%% of VRAM allowance (RX_VK_SPARE_SOFT_PCT)", pct);
+        return pct;
+    }();
     uint64_t vu = 0, va = 0;
     // (relink, issues 6 and 7) and when the system has little left to commit: Windows backs VRAM with commit (in a player's
     // log the process's private bytes were 31.6 GB with 12.5 GB of a 16 GB card used, 20 GB here with 6 GB of VRAM), and the
@@ -4708,6 +4718,10 @@ void texture_frame(uint64_t completed) {
     const bool keep_tight = newest && tight && tight_cap && va && vu <= va && commit_short(frame_no) == 0;
     const uint64_t spare_cap = keep_tight ? tight_cap : kSpareBytes;
     st_tight_frames += keep_tight;
+    // Usually vram_usage was already queried for the tight path; do not ask the driver again.
+    const bool soft_checked = spare_soft_pct > 0 && !spares.empty() &&
+                              (va > 0 || vram_usage(&vu, &va, nullptr));
+    static uint64_t soft_spares_freed = 0;
     int destroyed = 0;
     for (auto it = dead.begin(); it != dead.end() && destroyed < per_frame;) {
         if (it->value > completed) {
@@ -4745,17 +4759,25 @@ void texture_frame(uint64_t completed) {
     if (strict) destroyed = 0;   // (their trim has the cap to itself)
     for (size_t i = 0; i < spares.size();) {
         // (RX_VK_SPARES_NEWEST: while VRAM is tight, the few kept go after tight_life frames or past their cap, not all at once)
-        const bool go = newest && (!tight || keep_tight)
+        const bool soft_go = soft_checked &&
+                             spare_pressure::release_idle(vu, va, spare_soft_pct, frame_no - spares[i].frame);
+        const bool go = soft_go || (newest && (!tight || keep_tight)
                             ? frame_no - spares[i].frame > (keep_tight ? tight_life : 300) || spare_bytes > spare_cap
-                            : frame_no - spares[i].frame > 300 || spare_bytes > kSpareBytes || tight;
+                            : frame_no - spares[i].frame > 300 || spare_bytes > kSpareBytes || tight);
         if (go && destroyed < per_frame) {
             destroyed++;
+            if (soft_go) soft_spares_freed++;
             destroy_image(spares[i].image, spares[i].allocation);
             spare_bytes -= std::min(spare_bytes, spares[i].bytes);
             spares.erase(spares.begin() + (ptrdiff_t)i);
         } else {
             i++;
         }
+    }
+    if (frame_no % 600 == 0 && soft_spares_freed) {
+        logf("vk: experimental spare reclaim: %llu aged spare images released since previous report",
+             (unsigned long long)soft_spares_freed);
+        soft_spares_freed = 0;
     }
     if (frame_no % 600 == 0 && (st_recycled || st_fresh)) {
         logf("vk: images: %lld recycled, %lld made (%zu spares, %llu MB)", (long long)st_recycled, (long long)st_fresh, spares.size(),
